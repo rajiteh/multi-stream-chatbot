@@ -31,12 +31,14 @@ class TwitchStream extends stream.AbstractStream {
         }
 
         // Define configuration options
+        
         const opts = {
             identity: {
                 username: twitchAuth.botUsername,
                 password: twitchAuth.oauthToken
             },
             channels: [twitchAuth.channel],
+            options: { debug: true },
             ...customClientOpts
         }
 

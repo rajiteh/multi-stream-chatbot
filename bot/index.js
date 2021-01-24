@@ -5,15 +5,14 @@ class StreamBot {
         this.messageHandler = this.messageHandler.bind(this)
 
         this.streams = streams
-        this.streams.forEach(s => s.addMessageHandler(this.messageHandler))
-
+        this.streams.forEach(s => s.addMessageHandler(this.messageHandler)) 
         this.actionSwitcher = new ActionSwitcher(actions, {
             blacklisted: config.blacklistedActions
         })
     }
 
     start() {
-        this.streams.forEach(s => s.listen())
+        this.streams.forEach(s => s.listen()) 
         console.log("* StreamBot is listening")
     }
 
@@ -23,7 +22,7 @@ class StreamBot {
             trimmedMessage,
             ctx
         )
-        messages.forEach(m => publisher.sendMessage(m))
+        messages.forEach(async m => await publisher.sendMessage(m))
     }
 }
 

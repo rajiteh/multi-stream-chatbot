@@ -7,7 +7,7 @@ class ActionSwitcher {
     async getMessages(message, ctx) {
         var messages = []
 
-        for (action of this.actions) {
+        for (let action of this.actions) {
             const generatedMessage = await action.getMessage(message, ctx)
 
             if (!generatedMessage) {
