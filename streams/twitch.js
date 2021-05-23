@@ -31,7 +31,7 @@ class TwitchStream extends stream.AbstractStream {
         }
 
         // Define configuration options
-        
+
         const opts = {
             identity: {
                 username: twitchAuth.botUsername,
@@ -41,6 +41,8 @@ class TwitchStream extends stream.AbstractStream {
             options: { debug: true },
             ...customClientOpts
         }
+
+        this.twitchChannel = twitchAuth.channel
 
         // Bind class methods
         this.onMessageHandler = this.onMessageHandler.bind(this)
@@ -54,6 +56,14 @@ class TwitchStream extends stream.AbstractStream {
 
     listen() {
         this.client.connect()
+    }
+
+    async poke() {
+        if (this.client && this.connected) {
+            await this.client.say(this.twitchChannel, "poke")
+            return true
+        }
+        throw new Error("Twitch client is not connected.")
     }
 
     onMessageHandler(target, context, msg, self) {
@@ -80,6 +90,7 @@ class TwitchStream extends stream.AbstractStream {
 
     onConnectedHandler(addr, port) {
         console.log(`* Connected to ${addr}:${port}`)
+        this.connected = true
     }
 }
 

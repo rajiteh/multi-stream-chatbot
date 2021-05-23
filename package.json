@@ -32,8 +32,11 @@
     "url": "https://github.com/HackerShackOfficial/multi-stream-chatbot/issues"
   },
   "dependencies": {
+    "axios": "^0.21.1",
+    "eventsource": "^1.1.0",
     "googleapis": "~42.0.0",
     "node-fetch": "^2.6.1",
+    "telnetlib": "^0.1.0",
     "tmi.js": "~1.4.5"
   },
   "homepage": "https://github.com/HackerShackOfficial/multi-stream-chatbot#readme",
