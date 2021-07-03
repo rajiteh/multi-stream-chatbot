@@ -1,6 +1,7 @@
 const stream = require("./stream")
 const axios = require("axios")
 const EventSource = require("eventsource")
+const events = require('events')
 
 class FacebookTargetedMessagePublisher extends stream.AbstractTargetedMessagePublisher {
     constructor(client) {
@@ -14,7 +15,7 @@ class FacebookTargetedMessagePublisher extends stream.AbstractTargetedMessagePub
 }
 
 class FacebookStream extends stream.AbstractStream {
-    constructor(fbAuth) {
+    constructor(fbAuth, onConnect = () => { }) {
         super()
 
         if (!fbAuth) {
@@ -34,6 +35,7 @@ class FacebookStream extends stream.AbstractStream {
 
         this.onMessageHandler = this.onMessageHandler.bind(this)
         this.client.onMessage(this.onMessageHandler)
+        this.client.onConnect(onConnect)
     }
 
     listen() {
@@ -67,17 +69,24 @@ class FacebookStream extends stream.AbstractStream {
 
         this.notifyListeners(payload.message, publisher, ctx)
     }
+
 }
 
 class FacebookChat {
     constructor({ oauthToken, pageId }) {
         this.pageId = pageId
         this.oauthToken = oauthToken
+        this.clientEvents = new events.EventEmitter();
     }
 
     onMessage(fn) {
         this.onMessageHandler = fn
     }
+
+    onConnect(fn) {
+        this.onConnectHandler = fn
+    }
+
     async getActiveLiveVideo(retries, sleep = 30000) {
         let attempt = 0
         while (!retries || retries < 0 || attempt <= retries) {
@@ -97,7 +106,7 @@ class FacebookChat {
             }
             console.warn(
                 `FB: Unable to detect a facebook live video, retrying in ${sleep /
-                    1000} seconds.`
+                1000} seconds.`
             )
             await new Promise(resolve => setTimeout(resolve, sleep))
             attempt = attempt + 1
@@ -129,7 +138,7 @@ class FacebookChat {
             this.onMessageHandler(payload)
         }
 
-        source.addEventListener("error", function(e) {
+        source.addEventListener("error", function (e) {
             if (e.readyState == EventSource.CLOSED) {
                 console.error("Connection was closed! ", e)
             } else {
@@ -146,9 +155,12 @@ class FacebookChat {
                 ) {
                     // live is still active. reschedule check.
                     return setTimeout(liveCheck, 30000)
+                } else {
+                    throw Error("Video changed or event source is no longer up.")
                 }
             } catch (e) {
                 console.error("Live video no longer detected.", activeLive)
+                console.error(e)
                 try {
                     console.log("Closing the event source.")
                     source.close()
@@ -162,6 +174,13 @@ class FacebookChat {
         }
         // Setup a healthcheck
         setTimeout(liveCheck, 30000)
+
+        // emit the onConnect event
+        console.log("Trying the onconnect")
+        if (this.onConnect) {
+            console.log("I was here")
+            this.onConnectHandler(this)
+        }
     }
 
     async postComment(message, threadId) {
