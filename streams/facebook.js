@@ -61,8 +61,8 @@ class FacebookStream extends stream.AbstractStream {
                 displayName: name
             }
         }
-        console.debug(
-            `FB: ${ctx.author.displayName} says "${payload.message}" (${ctx.threadId})`
+        console.log(
+            `${ctx.author.displayName} says "${payload.message}" (${ctx.threadId})`
         )
 
         const publisher = new FacebookTargetedMessagePublisher(this.client)
@@ -87,50 +87,83 @@ class FacebookChat {
         this.onConnectHandler = fn
     }
 
-    async getActiveLiveVideo(retries, sleep = 30000) {
-        let attempt = 0
-        while (!retries || retries < 0 || attempt <= retries) {
-            const apiResponse = await axios.get(
-                `https://graph.facebook.com/v10.0/${this.pageId}/live_videos?fields=status,id,permalink_url&access_token=${this.oauthToken}`
-            )
-            if (!(apiResponse.status == 200 && apiResponse.data.data)) {
-                throw `Facebook API did not return the data we wanted.\nStatus:${apiResponse.status}\nData:${apiResponse.data}`
-            }
 
-            const activeLiveVideos = apiResponse.data.data.filter(
-                video => video.status == "LIVE"
-            )
+    log(...message) {
+        console.log(`FB: `, ...message)
+    }
 
-            if (activeLiveVideos.length > 0) {
-                return activeLiveVideos.pop()
-            }
-            console.warn(
-                `FB: Unable to detect a facebook live video, retrying in ${sleep /
-                1000} seconds.`
-            )
-            await new Promise(resolve => setTimeout(resolve, sleep))
-            attempt = attempt + 1
+    async getActiveLiveVideo() {
+        this.log(`Looking for live videos.`)
+        const apiResponse = await axios.get(
+            `https://graph.facebook.com/v10.0/${this.pageId}/live_videos?fields=status,id,permalink_url&access_token=${this.oauthToken}`
+        )
+        if (!(apiResponse.status == 200 && apiResponse.data.data)) {
+            throw `Facebook API did not return the data we wanted.\nStatus:${apiResponse.status}\nData:${apiResponse.data}`
         }
-        throw "Could not find an active live video within the timeout."
+
+        const activeLiveVideos = apiResponse.data.data.filter(
+            video => video.status == "LIVE"
+        )
+
+        if (activeLiveVideos.length > 0) {
+            return activeLiveVideos.pop()
+        } else {
+            throw `No active live video found.`
+        }
     }
 
     async connect() {
-        this.liveVideo = await this.getActiveLiveVideo(-1)
-        console.log(
-            `FB: * Detected Live Video! * Video ID: ${this.liveVideo.id}`
+        try {
+            const activeLive = await this.getActiveLiveVideo()
+            if (
+                !(this.liveVideo && this.source) || // if we don't have a livevideo or a source configured 
+                (activeLive.id !== this.liveVideo.id) || // if the new live id is different from the existing one
+                this.source.readyState != EventSource.OPEN // if the event source has got closed
+            ) {
+                await this.setupSession(activeLive)
+                this.log("Live session setup.")
+            } else {
+                // TODO: Remove this line. 
+                // this.log("Session is ok.")
+            }
+        } catch (e) {
+            this.log("There was an issue detecting and or configuring the live.")
+            console.error(e)
+            this.liveVideo = null
+        } finally {
+            // Check back in a bit to make sure the video is still alive..
+            setTimeout(this.connect.bind(this), 30000)
+        }
+    }
+    async setupSession(liveVideo) {
+        this.liveVideo = liveVideo
+
+        this.log(
+            `Detected Video ID: ${this.liveVideo.id}`
         )
 
-        var source = new EventSource(
+        // Make sure the source is closed
+        if (this.source) {
+            try {
+                this.source.close()
+            } catch (e) {
+                // ignore
+            }
+            this.source = undefined
+        }
+
+        this.source = new EventSource(
             `https://streaming-graph.facebook.com/${this.liveVideo.id}/live_comments?access_token=${this.oauthToken}&fields=from{name,id},message,attachment,message_tags,created_time,application&comment_rate=one_hundred_per_second&live_filter=no_filter`
         )
-        source.onmessage = event => {
+
+        this.source.onmessage = event => {
             if (event.type != "message") {
-                console.error(`FB ERROR: Got an event of type ${event.type}.`)
+                this.log(`ERROR: Got an event of type ${event.type}.`)
                 return
             }
             if (!event.data) {
-                console.error(
-                    `FB ERROR: Event did not contain any data: ${event}`
+                this.log(
+                    `ERROR: Event did not contain any data: ${event}`
                 )
             }
 
@@ -138,47 +171,17 @@ class FacebookChat {
             this.onMessageHandler(payload)
         }
 
-        source.addEventListener("error", function (e) {
+        this.source.addEventListener("error", function (e) {
             if (e.readyState == EventSource.CLOSED) {
-                console.error("Connection was closed! ", e)
+                this.log("Connection was closed! ", e)
             } else {
-                console.error("An unknown error occurred: ", e)
+                this.log("An unknown error occurred: ", e)
             }
         })
-        const liveCheck = async () => {
-            try {
-                const activeLive = await this.getActiveLiveVideo(1, 10)
-                if (
-                    activeLive &&
-                    activeLive.id === this.liveVideo.id &&
-                    source.readyState == EventSource.OPEN
-                ) {
-                    // live is still active. reschedule check.
-                    return setTimeout(liveCheck, 30000)
-                } else {
-                    throw Error("Video changed or event source is no longer up.")
-                }
-            } catch (e) {
-                console.warn("Live video no longer detected.")
-                console.error(e)
-                try {
-                    console.log("Closing the event source.")
-                    source.close()
-                } catch (e) {
-                    // ignore
-                }
-                console.error("Resetting FB connection loop.")
-                this.liveVideo = null
-                setTimeout(this.connect, 1)
-            }
-        }
-        // Setup a healthcheck
-        setTimeout(liveCheck, 30000)
 
         // emit the onConnect event
-        console.log("Trying the onconnect")
         if (this.onConnect) {
-            console.log("I was here")
+            this.log("Executing the onconnect")
             this.onConnectHandler(this)
         }
     }
@@ -198,7 +201,7 @@ class FacebookChat {
         try {
             await axios.post(postUrl, payload)
         } catch (e) {
-            console.error("Could not post the comment.")
+            this.log("Could not post the comment.")
             console.error(e)
             throw e
         }
