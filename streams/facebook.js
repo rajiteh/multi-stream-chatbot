@@ -159,7 +159,7 @@ class FacebookChat {
                     throw Error("Video changed or event source is no longer up.")
                 }
             } catch (e) {
-                console.error("Live video no longer detected.", activeLive)
+                console.warn("Live video no longer detected.")
                 console.error(e)
                 try {
                     console.log("Closing the event source.")
